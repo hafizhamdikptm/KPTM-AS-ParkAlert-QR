@@ -1,0 +1,1359 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KPTM-AS ParkAlert QR | Sistem Notifikasi Parkir</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- QRCode.js untuk menjana QR sebenar (menggunakan cdnjs yang stabil & disokong Google Sites) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <!-- html5-qrcode untuk pengimbas kamera sebenar -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+    <!-- Tone.js untuk bunyi notifikasi -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+        }
+        /* Animasi khas untuk pengimbas QR simulasi */
+        @keyframes scanLine {
+            0% { top: 10%; }
+            50% { top: 85%; }
+            100% { top: 10%; }
+        }
+        .scanner-laser {
+            position: absolute;
+            left: 10%;
+            right: 10%;
+            height: 3px;
+            background: #ef4444;
+            box-shadow: 0 0 12px #ef4444, 0 0 20px #ef4444;
+            animation: scanLine 2.5s infinite ease-in-out;
+        }
+        /* Gaya Cetakan Pelekat QR */
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            #printable-sticker, #printable-sticker * {
+                visibility: visible;
+            }
+            #printable-sticker {
+                position: fixed;
+                left: 50%;
+                top: 50%;
+                transform: translate(-50%, -50%);
+                border: 2px solid #000 !important;
+                box-shadow: none !important;
+            }
+        }
+    </style>
+</head>
+<body class="text-slate-800 antialiased min-h-screen flex flex-col">
+
+    <!-- Header / Navigasi Atas -->
+    <header class="bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 text-white shadow-lg sticky top-0 z-40">
+        <div class="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
+            <div onclick="handleSecretAdminTap()" class="flex items-center space-x-3 cursor-pointer select-none" title="KPTM-AS ParkAlert">
+                <div class="bg-amber-400 text-blue-950 p-2.5 rounded-xl font-extrabold text-xl shadow-md">
+                    <i class="fa-solid fa-car-side"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg sm:text-xl tracking-tight leading-none">KPTM-AS ParkAlert</h1>
+                    <p class="text-xs text-blue-200 mt-1">Sistem QR Alih Kenderaan • KPTM Alor Setar</p>
+                </div>
+            </div>
+            
+            <!-- Butang Notifikasi Masuk (Simulasi Penerima) -->
+            <button onclick="toggleNotificationDrawer()" class="relative bg-blue-800/70 hover:bg-blue-700 border border-blue-600/50 p-2.5 rounded-xl transition flex items-center space-x-2">
+                <i class="fa-solid fa-bell text-amber-400 text-lg"></i>
+                <span class="hidden sm:inline text-sm font-medium">Peti Masuk</span>
+                <span id="notif-badge" class="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center shadow">2</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Navigasi Tab Utama -->
+    <nav class="bg-white border-b border-slate-200 shadow-sm sticky top-[72px] z-30">
+        <div class="max-w-5xl mx-auto px-2 sm:px-4 flex justify-around sm:justify-start sm:space-x-6">
+            <button onclick="switchTab('scan')" id="tab-scan" class="tab-btn flex-1 sm:flex-none py-3.5 px-3 border-b-2 border-blue-800 text-blue-900 font-semibold text-xs sm:text-sm flex items-center justify-center space-x-2 transition">
+                <i class="fa-solid fa-qrcode text-base"></i>
+                <span>Imbas / Minta Alih</span>
+            </button>
+            <button onclick="switchTab('register')" id="tab-register" class="tab-btn flex-1 sm:flex-none py-3.5 px-3 border-b-2 border-transparent text-slate-500 hover:text-slate-800 font-medium text-xs sm:text-sm flex items-center justify-center space-x-2 transition">
+                <i class="fa-solid fa-id-card text-base"></i>
+                <span>Jana Pelekat QR Saya</span>
+            </button>
+            <button onclick="switchTab('directory')" id="tab-directory" class="tab-btn flex-1 sm:flex-none py-3.5 px-3 border-b-2 border-transparent text-slate-500 hover:text-slate-800 font-medium text-xs sm:text-sm flex items-center justify-center space-x-2 transition">
+                <i class="fa-solid fa-list-check text-base"></i>
+                <span>Senarai Aktif</span>
+            </button>
+            <button onclick="switchTab('admin')" id="tab-admin" class="tab-btn hidden flex-1 sm:flex-none py-3.5 px-3 border-b-2 border-transparent text-slate-500 hover:text-slate-800 font-medium text-xs sm:text-sm flex items-center justify-center space-x-2 transition">
+                <i class="fa-solid fa-user-shield text-base"></i>
+                <span>Admin</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Kandungan Utama -->
+    <main class="flex-grow max-w-5xl w-full mx-auto px-4 py-6 sm:py-8">
+
+        <!-- Banner Info Kampus -->
+        <div class="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-6 flex items-start space-x-3 shadow-sm">
+            <i class="fa-solid fa-circle-info text-amber-600 text-xl mt-0.5"></i>
+            <div class="text-sm text-amber-900">
+                <p id="campus-banner-title" class="font-semibold">Zon Parkir KPTM Alor Setar (Hadapan Blok Utama & Parkir Pelajar)</p>
+                <p id="campus-banner-desc" class="text-amber-800/90 mt-0.5">Imbas pelekat QR pada cermin hadapan kenderaan yang menghalang laluan anda untuk menghantar amaran segera tanpa perlu ke kaunter pentadbiran.</p>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TAB 1: IMBAS QR / MINTA ALIH KENDERAAN     -->
+        <!-- ========================================== -->
+        <section id="view-scan" class="space-y-6">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                <!-- Kolum Kiri: Simulasi Pengimbas QR & Carian Plat -->
+                <div class="lg:col-span-6 bg-white rounded-2xl shadow-sm border border-slate-200 p-5 sm:p-6">
+                    <h2 class="text-lg font-bold text-slate-800 mb-1 flex items-center">
+                        <i class="fa-solid fa-camera text-blue-700 mr-2"></i> Imbas QR Pada Cermin Kereta
+                    </h2>
+                    <p class="text-xs text-slate-500 mb-4">Arahkan kamera ke pelekat QR KPTM atau pilih simulasi imbasan di bawah.</p>
+
+                    <!-- Kotak Simulasi Kamera -->
+                    <div class="relative bg-slate-900 rounded-2xl h-64 overflow-hidden flex flex-col items-center justify-center border-4 border-slate-800 shadow-inner mb-4">
+                        <!-- Paparan Kamera Sebenar -->
+                        <div id="qr-reader" class="w-full h-full hidden object-cover"></div>
+
+                        <!-- Paparan Sedia Ada / Simulasi -->
+                        <div id="scanner-placeholder" class="flex flex-col items-center justify-center">
+                            <div class="w-40 h-40 border-2 border-dashed border-amber-400/80 rounded-xl flex items-center justify-center relative">
+                                <i class="fa-solid fa-qrcode text-slate-700 text-6xl"></i>
+                                <div class="scanner-laser"></div>
+                            </div>
+                        </div>
+
+                        <!-- Butang Kawalan Kamera -->
+                        <div class="absolute bottom-3 left-0 right-0 flex justify-center z-10 px-3">
+                            <button id="toggle-camera-btn" onclick="toggleCameraScanner()" type="button" class="bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold text-xs px-4 py-2 rounded-full shadow-lg flex items-center space-x-2 transition">
+                                <i class="fa-solid fa-video"></i>
+                                <span>Aktifkan Kamera Imbasan</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="relative flex py-2 items-center">
+                        <div class="flex-grow border-t border-slate-200"></div>
+                        <span class="flex-shrink mx-3 text-xs text-slate-400 font-medium">ATAU CARI NOMBOR PLAT</span>
+                        <div class="flex-grow border-t border-slate-200"></div>
+                    </div>
+
+                    <!-- Carian Manual Nombor Plat -->
+                    <form onsubmit="handleManualSearch(event)" class="mt-2 flex space-x-2">
+                        <input type="text" id="search-plate-input" placeholder="Contoh: KFD 4821" class="flex-grow uppercase bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-xl focus:ring-blue-500 focus:border-blue-500 block p-3 font-semibold tracking-wider" required>
+                        <button type="submit" class="bg-blue-800 hover:bg-blue-900 text-white font-semibold rounded-xl px-5 py-3 text-sm transition shadow-sm flex items-center">
+                            <i class="fa-solid fa-magnifying-glass mr-2"></i> Cari
+                        </button>
+                    </form>
+
+                    <!-- Butang Imbas Pantas (Untuk ujian & akses segera) -->
+                    <div class="mt-4 pt-3 border-t border-slate-100">
+                        <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Akses Pantas Kenderaan Berdaftar:</p>
+                        <div id="quick-scan-buttons" class="flex flex-wrap gap-1.5"></div>
+                    </div>
+                </div>
+
+                <!-- Kolum Kanan: Borang Hantar Notifikasi Kepada Pemilik -->
+                <div class="lg:col-span-6 bg-white rounded-2xl shadow-sm border border-slate-200 p-5 sm:p-6 flex flex-col justify-between">
+                    <div id="target-empty-state" class="h-full flex flex-col items-center justify-center text-center py-10">
+                        <div class="w-16 h-16 bg-blue-50 text-blue-700 rounded-2xl flex items-center justify-center text-2xl mb-4">
+                            <i class="fa-solid fa-car-burst"></i>
+                        </div>
+                        <h3 class="font-bold text-slate-800 text-base">Tiada Kenderaan Dipilih</h3>
+                        <p class="text-sm text-slate-500 max-w-xs mt-1">Sila imbas kod QR pada kenderaan yang menghalang laluan anda atau masukkan nombor plat untuk menghantar amaran.</p>
+                    </div>
+
+                    <!-- Paparan Maklumat Pemilik & Hantar Amaran -->
+                    <div id="target-vehicle-card" class="hidden space-y-5">
+                        <div class="flex items-center justify-between border-b border-slate-100 pb-4">
+                            <div>
+                                <span id="target-role-badge" class="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800 mb-1">PELAJAR</span>
+                                <h3 id="target-plate" class="text-2xl font-extrabold text-slate-900 tracking-wider">KFD 4821</h3>
+                                <p id="target-car-model" class="text-sm text-slate-600">Perodua Myvi (Putih)</p>
+                            </div>
+                            <div class="text-right">
+                                <div class="w-12 h-12 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xl mx-auto">
+                                    <i class="fa-solid fa-check-shield"></i>
+                                </div>
+                                <span class="text-[11px] font-medium text-emerald-700">Berdaftar KPTM</span>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80 space-y-1.5 text-sm">
+                            <div class="flex justify-between">
+                                <span class="text-slate-500">Pemilik:</span>
+                                <span id="target-owner" class="font-semibold text-slate-800">Muhammad Aiman</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-slate-500">Fakulti / Jabatan:</span>
+                                <span id="target-dept" class="font-medium text-slate-700">Sains Komputer (CC101)</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-slate-500">Lokasi Parkir:</span>
+                                <span id="target-zone" class="font-medium text-blue-800">Zon A - Hadapan Kafe</span>
+                            </div>
+                        </div>
+
+                        <!-- Pilihan Mesej Pantas -->
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Pilih Mesej Amaran:</label>
+                            <div class="space-y-2">
+                                <label class="flex items-center p-3 border border-slate-200 rounded-xl cursor-pointer hover:bg-blue-50/50 transition">
+                                    <input type="radio" name="alert-msg" value="Kereta anda menghalang laluan saya untuk keluar. Mohon alihkan segera." checked class="w-4 h-4 text-blue-700 focus:ring-blue-500">
+                                    <span class="ml-3 text-sm text-slate-700 font-medium">Kereta anda menghalang laluan saya. Mohon alihkan segera.</span>
+                                </label>
+                                <label class="flex items-center p-3 border border-slate-200 rounded-xl cursor-pointer hover:bg-blue-50/50 transition">
+                                    <input type="radio" name="alert-msg" value="Kecemasan! Saya perlu keluar segera dari kawasan kampus." class="w-4 h-4 text-blue-700 focus:ring-blue-500">
+                                    <span class="ml-3 text-sm text-slate-700 font-medium">Kecemasan! Saya perlu keluar segera dari kampus.</span>
+                                </label>
+                                <label class="flex items-center p-3 border border-slate-200 rounded-xl cursor-pointer hover:bg-blue-50/50 transition">
+                                    <input type="radio" name="alert-msg" value="Lampu kenderaan anda masih menyala / tingkap terbuka." class="w-4 h-4 text-blue-700 focus:ring-blue-500">
+                                    <span class="ml-3 text-sm text-slate-700 font-medium">Lampu kenderaan masih menyala / tingkap terbuka.</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Nombor Plat Anda (Pilihan - Supaya pemilik kenal pasti):</label>
+                            <input type="text" id="sender-plate" placeholder="Contoh: KEC 1234" class="w-full uppercase bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-medium">
+                        </div>
+
+                        <!-- Butang Tindakan -->
+                        <div class="pt-2 flex flex-col sm:flex-row gap-2.5">
+                            <button onclick="sendParkAlert()" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-md hover:shadow-lg transition flex items-center justify-center space-x-2">
+                                <i class="fa-solid fa-bell-concierge animate-bounce"></i>
+                                <span>Hantar Amaran Segera</span>
+                            </button>
+                            <a id="whatsapp-direct-btn" href="#" target="_blank" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3.5 px-4 rounded-xl shadow-sm transition flex items-center justify-center space-x-2">
+                                <i class="fa-brands fa-whatsapp text-lg"></i>
+                                <span>WhatsApp</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========================================== -->
+        <!-- TAB 2: DAFTAR & JANA PELEKAT QR KENDERAAN  -->
+        <!-- ========================================== -->
+        <section id="view-register" class="hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                <!-- Borang Pendaftaran -->
+                <div class="lg:col-span-7 bg-white rounded-2xl shadow-sm border border-slate-200 p-5 sm:p-6">
+                    <h2 class="text-lg font-bold text-slate-800 mb-1">Daftar Kenderaan & Jana Pelekat QR</h2>
+                    <p class="text-xs text-slate-500 mb-5">Cetak dan letakkan pelekat QR ini di papan pemuka (*dashboard*) atau cermin hadapan kenderaan anda.</p>
+
+                    <form onsubmit="registerVehicle(event)" class="space-y-4">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Kategori Warga KPTM *</label>
+                                <select id="reg-role" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-sm font-medium" required>
+                                    <option value="PELAJAR">Pelajar KPTM</option>
+                                    <option value="PENSYARAH">Pensyarah</option>
+                                    <option value="STAF">Staf Pentadbiran / Sokongan</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">No. ID Pelajar / Staf *</label>
+                                <input type="text" id="reg-id" placeholder="CTH: ASJ24123456 / FP01234" class="w-full uppercase bg-slate-50 border border-slate-300 rounded-xl p-3 text-sm" required>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Nama Penuh *</label>
+                                <input type="text" id="reg-name" placeholder="Nama seperti dalam kad matriks" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-sm" required>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">No. Telefon (WhatsApp) *</label>
+                                <input type="tel" id="reg-phone" placeholder="Cth: 60123456789" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-sm" required>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Nombor Plat Kenderaan *</label>
+                                <input type="text" id="reg-plate" placeholder="Cth: KFB 9921" class="w-full uppercase bg-slate-50 border border-slate-300 rounded-xl p-3 text-sm font-bold tracking-wider" required>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Model & Warna Kenderaan *</label>
+                                <input type="text" id="reg-model" placeholder="Cth: Proton Saga (Kelabu)" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-sm" required>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Jabatan / Kod Kursus</label>
+                            <input type="text" id="reg-dept" placeholder="Cth: Diploma Pengurusan Perniagaan (AB101)" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-sm">
+                        </div>
+
+                        <button type="submit" class="w-full bg-blue-800 hover:bg-blue-900 text-white font-bold py-3.5 rounded-xl shadow-md transition flex items-center justify-center space-x-2">
+                            <i class="fa-solid fa-qrcode"></i>
+                            <span>Jana Pelekat QR Kenderaan Saya</span>
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Pratonton Pelekat QR Boleh Cetak -->
+                <div class="lg:col-span-5 flex flex-col items-center justify-center">
+                    <div id="printable-sticker" class="bg-white border-4 border-blue-900 rounded-3xl p-6 w-full max-w-xs text-center shadow-xl relative overflow-hidden">
+                        <!-- Jalur Atas Pelekat -->
+                        <div class="bg-blue-900 text-white -mx-6 -mt-6 py-3 px-4 mb-4">
+                            <p class="text-[10px] font-bold tracking-widest uppercase text-amber-400">Kolej Poly-Tech MARA</p>
+                            <h3 class="font-extrabold text-base tracking-wide">ALOR SETAR • PARKALERT</h3>
+                        </div>
+
+                        <p class="text-xs font-semibold text-slate-600 mb-3">IMBAS QR UNTUK HUBUNGI PEMILIK</p>
+
+                        <!-- Bekas Kod QR -->
+                        <div class="bg-white p-3 rounded-2xl border-2 border-slate-200 inline-block shadow-inner mb-3">
+                            <div id="qrcode-container" class="flex items-center justify-center"></div>
+                        </div>
+
+                        <div class="bg-slate-100 rounded-xl py-2 px-3 mb-2">
+                            <p id="sticker-plate" class="text-2xl font-black text-slate-900 tracking-widest">KFD 4821</p>
+                            <p id="sticker-model" class="text-xs font-medium text-slate-600">Perodua Myvi (Putih)</p>
+                        </div>
+
+                        <div class="flex items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-100">
+                            <span id="sticker-role" class="font-bold text-blue-800">PELAJAR</span>
+                            <span>Privasi Nombor Dilindungi</span>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 flex space-x-3 w-full max-w-xs">
+                        <button onclick="window.print()" class="flex-1 bg-slate-800 hover:bg-slate-900 text-white text-sm font-semibold py-2.5 px-4 rounded-xl shadow transition flex items-center justify-center space-x-2">
+                            <i class="fa-solid fa-print"></i>
+                            <span>Cetak Pelekat</span>
+                        </button>
+                        <button onclick="simulateScanCurrentSticker()" class="flex-1 bg-amber-500 hover:bg-amber-600 text-slate-950 text-sm font-bold py-2.5 px-4 rounded-xl shadow transition flex items-center justify-center space-x-2">
+                            <i class="fa-solid fa-vial"></i>
+                            <span>Uji Imbasan</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========================================== -->
+        <!-- TAB 3: SENARAI KENDERAAN AKTIF DI KAMPUS   -->
+        <!-- ========================================== -->
+        <section id="view-directory" class="hidden space-y-4">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-800">Direktori Kenderaan Berdaftar KPTM-AS</h2>
+                        <p class="text-xs text-slate-500">Klik mana-mana kenderaan untuk menghantar permintaan alih kereta.</p>
+                    </div>
+                    <div class="flex space-x-2">
+                        <button onclick="filterDirectory('ALL')" class="filter-pill bg-blue-900 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">Semua</button>
+                        <button onclick="filterDirectory('PELAJAR')" class="filter-pill bg-slate-100 text-slate-700 text-xs font-semibold px-3 py-1.5 rounded-lg">Pelajar</button>
+                        <button onclick="filterDirectory('PENSYARAH')" class="filter-pill bg-slate-100 text-slate-700 text-xs font-semibold px-3 py-1.5 rounded-lg">Pensyarah</button>
+                        <button onclick="filterDirectory('STAF')" class="filter-pill bg-slate-100 text-slate-700 text-xs font-semibold px-3 py-1.5 rounded-lg">Staf</button>
+                    </div>
+                </div>
+
+                <div id="vehicle-list-grid" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <!-- Dijana melalui JS -->
+                </div>
+            </div>
+        </section>
+
+        <!-- ========================================== -->
+        <!-- TAB 4: PANEL KAWALAN ADMIN                 -->
+        <!-- ========================================== -->
+        <section id="view-admin" class="hidden space-y-6">
+            <!-- Skrin Log Masuk Admin -->
+            <div id="admin-login-box" class="max-w-md mx-auto bg-white rounded-2xl shadow-sm border border-slate-200 p-6 text-center">
+                <div class="w-14 h-14 bg-blue-100 text-blue-900 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-3">
+                    <i class="fa-solid fa-lock"></i>
+                </div>
+                <h2 class="text-lg font-bold text-slate-800">Akses Pentadbir Sistem</h2>
+                <p class="text-xs text-slate-500 mt-1 mb-4">Masukkan kata laluan Admin untuk mengurus rekod kenderaan dan tetapan kampus.</p>
+                <form onsubmit="handleAdminLogin(event)" class="space-y-3">
+                    <input type="password" id="admin-password-input" placeholder="Masukkan Kata Laluan Rahsia" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-sm text-center font-semibold tracking-widest" required>
+                    <button type="submit" class="w-full bg-blue-900 hover:bg-blue-950 text-white font-bold py-3 rounded-xl shadow transition">
+                        Log Masuk Admin
+                    </button>
+                </form>
+                <button onclick="exitAdminAccess()" class="mt-4 text-xs text-slate-400 hover:text-slate-600 underline">
+                    Kembali ke Paparan Utama
+                </button>
+            </div>
+
+            <!-- Papan Pemuka Admin (Selepas Log Masuk) -->
+            <div id="admin-dashboard" class="hidden space-y-6">
+                <!-- Tetapan Umum Sistem -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 sm:p-6">
+                    <div class="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
+                        <div>
+                            <h2 class="text-lg font-bold text-slate-800 flex items-center">
+                                <i class="fa-solid fa-sliders text-blue-800 mr-2"></i> Tetapan Maklumat Kampus & Keselamatan
+                            </h2>
+                            <p class="text-xs text-slate-500">Perubahan ini akan diselaraskan secara langsung kepada semua pengguna.</p>
+                        </div>
+                        <button onclick="logoutAdmin()" class="text-xs font-semibold text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg border border-red-200 transition">
+                            <i class="fa-solid fa-right-from-bracket mr-1"></i> Log Keluar
+                        </button>
+                    </div>
+
+                    <form onsubmit="saveSystemSettings(event)" class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Tajuk Hebahan Zon Parkir</label>
+                            <input type="text" id="setting-banner-title" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-sm" required>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Penerangan / Arahan Parkir Kampus</label>
+                            <textarea id="setting-banner-desc" rows="2" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-sm" required></textarea>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Tukar Kata Laluan Admin</label>
+                                <input type="text" id="setting-admin-pass" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-sm font-mono" required>
+                            </div>
+                            <div class="flex items-end">
+                                <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-xl shadow-sm transition">
+                                    <i class="fa-solid fa-floppy-disk mr-1.5"></i> Simpan Tetapan Sistem
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Pengurusan Rekod Kenderaan -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 sm:p-6">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+                        <div>
+                            <h3 class="text-lg font-bold text-slate-800">Urus Rekod Kenderaan Berdaftar</h3>
+                            <p class="text-xs text-slate-500">Sunting maklumat zon/pemilik atau padam rekod yang tidak sah.</p>
+                        </div>
+                        <span id="admin-total-count" class="bg-blue-100 text-blue-900 text-xs font-bold px-3 py-1 rounded-full self-start">0 Kenderaan</span>
+                    </div>
+
+                    <div id="admin-vehicle-list" class="space-y-3">
+                        <!-- Dijana oleh JS -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Modal Sunting Kenderaan (Admin) -->
+    <div id="edit-vehicle-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                <h3 class="font-bold text-base text-slate-900">Sunting Maklumat Kenderaan</h3>
+                <button onclick="closeEditModal()" class="text-slate-400 hover:text-slate-700">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <form onsubmit="saveEditedVehicle(event)" class="space-y-3">
+                <input type="hidden" id="edit-orig-plate">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">No. Plat</label>
+                        <input type="text" id="edit-plate" class="w-full bg-slate-100 border border-slate-300 rounded-xl p-2.5 text-sm font-bold uppercase" readonly>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Kategori</label>
+                        <select id="edit-role" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm">
+                            <option value="PELAJAR">PELAJAR</option>
+                            <option value="PENSYARAH">PENSYARAH</option>
+                            <option value="STAF">STAF</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Nama Pemilik</label>
+                    <input type="text" id="edit-owner" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm" required>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Model & Warna Kenderaan</label>
+                    <input type="text" id="edit-model" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm" required>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">No. Telefon (WhatsApp)</label>
+                    <input type="text" id="edit-phone" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm" required>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Zon Parkir Ditetapkan</label>
+                    <input type="text" id="edit-zone" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm" required>
+                </div>
+                <div class="pt-2 flex space-x-2">
+                    <button type="button" onclick="closeEditModal()" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2.5 rounded-xl text-sm">Batal</button>
+                    <button type="submit" class="flex-1 bg-blue-800 hover:bg-blue-900 text-white font-bold py-2.5 rounded-xl text-sm">Simpan Perubahan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Laci Notifikasi Masuk (Simulasi Telefon Pemilik Kereta) -->
+    <div id="notification-drawer" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 hidden flex justify-end transition-opacity">
+        <div class="bg-white w-full max-w-md h-full shadow-2xl flex flex-col">
+            <div class="bg-blue-950 text-white p-5 flex items-center justify-between">
+                <div class="flex items-center space-x-2.5">
+                    <i class="fa-solid fa-bell text-amber-400 text-xl"></i>
+                    <div>
+                        <h3 class="font-bold text-base">Peti Masuk Amaran Parkir</h3>
+                        <p class="text-xs text-blue-300">Notifikasi masa nyata ke telefon pemilik</p>
+                    </div>
+                </div>
+                <button onclick="toggleNotificationDrawer()" class="text-slate-300 hover:text-white p-2">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <div id="notification-list" class="flex-grow overflow-y-auto p-4 space-y-3 bg-slate-50">
+                <!-- Senarai Notifikasi -->
+            </div>
+
+            <div class="p-4 border-t border-slate-200 bg-white">
+                <button onclick="clearNotifications()" class="w-full text-xs font-semibold text-slate-500 hover:text-red-600 py-2">
+                    Padam Semua Rekod Notifikasi
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal / Kotak Mesej Pengesahan (Menggantikan alert()) -->
+    <div id="custom-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-6 text-center shadow-2xl transform transition-all">
+            <div id="modal-icon" class="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-3xl mx-auto mb-4">
+                <i class="fa-solid fa-paper-plane"></i>
+            </div>
+            <h3 id="modal-title" class="text-lg font-extrabold text-slate-900 mb-2">Amaran Berjaya Dihantar!</h3>
+            <p id="modal-desc" class="text-sm text-slate-600 mb-6">Pemilik kenderaan telah menerima notifikasi bunyi & getaran di telefon mereka.</p>
+            <button onclick="closeModal()" class="w-full bg-blue-800 hover:bg-blue-900 text-white font-bold py-3 rounded-xl transition">
+                Faham & Tutup
+            </button>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-500">
+        <p>© 2026 KPTM Alor Setar • Sistem Pengurusan Parkir Pintar & QR Komuniti Kampus</p>
+        <p id="cloud-status" class="mt-1 text-[11px] text-emerald-600 font-medium">
+            <i class="fa-solid fa-cloud-arrow-up mr-1"></i>Menyambung ke pelayan masa nyata KPTM-AS...
+        </p>
+    </footer>
+
+    <!-- Logik Aplikasi JavaScript & Penyegerakan Masa Nyata -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Konfigurasi Persekitaran Awan
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'kptm-alor-setar-parkalert';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+
+        let db = null;
+        let auth = null;
+        let currentUser = null;
+        let isCloudReady = false;
+
+        // Data Awal (Seed Data jika pangkalan data masih kosong)
+        const defaultVehicles = [
+            {
+                id: "KPTM230188",
+                plate: "KFD 4821",
+                model: "Perodua Myvi (Putih)",
+                owner: "Muhammad Aiman Bin Zulkifli",
+                role: "PELAJAR",
+                dept: "Diploma Sains Komputer (CC101)",
+                zone: "Zon A - Hadapan Kafeteria",
+                phone: "60123456789"
+            },
+            {
+                id: "STF-0412",
+                plate: "KCC 8810",
+                model: "Honda City (Hitam)",
+                owner: "Puan Norhayati Binti Ahmad",
+                role: "PENSYARAH",
+                dept: "Jabatan Pengajian Perniagaan",
+                zone: "Zon B - Parkir Pensyarah",
+                phone: "60198765432"
+            },
+            {
+                id: "KPTM240519",
+                plate: "KEX 3109",
+                model: "Perodua Axia (Merah)",
+                owner: "Nurul Izzah Binti Roslan",
+                role: "PELAJAR",
+                dept: "Diploma Perakaunan (AA101)",
+                zone: "Zon C - Padang Kawad",
+                phone: "60174455667"
+            },
+            {
+                id: "STF-0198",
+                plate: "KBG 5520",
+                model: "Proton X50 (Perak)",
+                owner: "Encik Hafizul Bin Mansor",
+                role: "STAF",
+                dept: "Unit Pentadbiran & Fasiliti",
+                zone: "Zon A - Blok Pentadbiran",
+                phone: "60139988776"
+            }
+        ];
+
+        let vehicles = [...defaultVehicles];
+        let notifications = [];
+        let selectedVehicle = null;
+        let currentStickerPlate = "KFD 4821";
+        let currentFilterRole = "ALL";
+        let initialNotifLoaded = false;
+        let isAdminLoggedIn = false;
+        let secretTapCount = 0;
+        let secretTapTimer = null;
+        let html5QrCode = null;
+        let isCameraScanning = false;
+        let systemSettings = {
+            bannerTitle: "Zon Parkir KPTM Alor Setar (Hadapan Blok Utama & Parkir Pelajar)",
+            bannerDesc: "Imbas pelekat QR pada cermin hadapan kenderaan yang menghalang laluan anda untuk menghantar amaran segera tanpa perlu ke kaunter pentadbiran.",
+            adminPassword: "admin123"
+        };
+
+        // Inisialisasi Pengesahan & Pangkalan Data Awan
+        async function initCloudSync() {
+            const statusEl = document.getElementById('cloud-status');
+            if (!firebaseConfig) {
+                statusEl.innerHTML = `<i class="fa-solid fa-circle-check mr-1"></i>Mod Tempatan Aktif`;
+                return;
+            }
+
+            try {
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                // Patuhi Peraturan Auth: Log masuk dahulu sebelum akses data
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    const cred = await signInWithCustomToken(auth, __initial_auth_token);
+                    currentUser = cred.user;
+                } else {
+                    const cred = await signInAnonymously(auth);
+                    currentUser = cred.user;
+                }
+
+                isCloudReady = true;
+                statusEl.innerHTML = `<i class="fa-solid fa-cloud-check mr-1"></i>Diselaraskan Secara Masa Nyata (ID Sesi: ${currentUser.uid})`;
+
+                setupRealtimeListeners();
+            } catch (error) {
+                console.error("Ralat sambungan awan:", error);
+                statusEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-amber-600 mr-1"></i>Mod Luar Talian Aktif`;
+            }
+        }
+
+        // Fungsi Carian Manual & Pemilihan Kenderaan
+        window.handleManualSearch = function(e) {
+            e.preventDefault();
+            const query = document.getElementById('search-plate-input').value.trim().toUpperCase();
+            if (!query) return;
+
+            const normalizedQuery = query.replace(/\s+/g, '');
+            const found = vehicles.find(v => v.plate.replace(/\s+/g, '') === normalizedQuery);
+
+            if (found) {
+                selectVehicleByPlate(found.plate);
+            } else {
+                showModal(
+                    "Kenderaan Tidak Ditemui",
+                    `Nombor plat "${query}" belum didaftarkan dalam sistem KPTM Alor Setar.`,
+                    "warning"
+                );
+            }
+        };
+
+        window.selectVehicleByPlate = function(plate) {
+            const found = vehicles.find(v => v.plate === plate);
+            if (!found) return;
+
+            selectedVehicle = found;
+            switchTab('scan');
+
+            document.getElementById('target-empty-state').classList.add('hidden');
+            document.getElementById('target-vehicle-card').classList.remove('hidden');
+
+            document.getElementById('target-role-badge').textContent = found.role;
+            document.getElementById('target-plate').textContent = found.plate;
+            document.getElementById('target-car-model').textContent = found.model;
+            document.getElementById('target-owner').textContent = found.owner;
+            document.getElementById('target-dept').textContent = found.dept;
+            document.getElementById('target-zone').textContent = found.zone;
+
+            const waMsg = encodeURIComponent(`Salam ${found.owner}, kenderaan anda (${found.plate}) di KPTM Alor Setar menghalang laluan saya. Mohon alihkan segera. Terima kasih.`);
+            document.getElementById('whatsapp-direct-btn').href = `https://wa.me/${found.phone}?text=${waMsg}`;
+        };
+
+        function renderQuickScanButtons() {
+            const container = document.getElementById('quick-scan-buttons');
+            if (!container) return;
+            container.innerHTML = vehicles.slice(0, 4).map(v => `
+                <button type="button" onclick="selectVehicleByPlate('${v.plate}')" class="text-xs bg-slate-100 hover:bg-blue-100 text-slate-700 hover:text-blue-900 font-bold px-2.5 py-1 rounded-lg border border-slate-200 transition">
+                    ${v.plate}
+                </button>
+            `).join('');
+        }
+
+        function playAlertSound() {
+            try {
+                if (typeof Tone !== 'undefined') {
+                    Tone.start();
+                    const synth = new Tone.Synth().toDestination();
+                    synth.triggerAttackRelease("C5", "8n");
+                    setTimeout(() => synth.triggerAttackRelease("E5", "8n"), 150);
+                }
+            } catch (e) {
+                console.log("Audio fallback:", e);
+            }
+        }
+
+        window.sendParkAlert = async function() {
+            if (!selectedVehicle) return;
+
+            const selectedRadio = document.querySelector('input[name="alert-msg"]:checked');
+            const messageText = selectedRadio ? selectedRadio.value : "Mohon alihkan kenderaan anda.";
+            const senderPlate = document.getElementById('sender-plate').value.trim().toUpperCase() || "Warga KPTM";
+
+            const now = new Date();
+            const timeFormatted = now.toLocaleTimeString('ms-MY', { hour: '2-digit', minute: '2-digit' });
+
+            const newAlert = {
+                targetPlate: selectedVehicle.plate,
+                senderPlate: senderPlate,
+                message: messageText,
+                time: `Hari ini, ${timeFormatted}`,
+                timestamp: Date.now(),
+                acknowledged: false
+            };
+
+            if (isCloudReady && currentUser && db) {
+                try {
+                    const alertsCol = collection(db, 'artifacts', appId, 'public', 'data', 'park_alerts');
+                    await addDoc(alertsCol, newAlert);
+                } catch (err) {
+                    console.error("Gagal menyimpan notifikasi ke awan:", err);
+                }
+            } else {
+                notifications.unshift({ docId: String(Date.now()), ...newAlert });
+                renderNotifications();
+            }
+
+            playAlertSound();
+
+            showModal(
+                "Amaran Segera Dihantar!",
+                `Notifikasi kecemasan telah dihantar terus kepada ${selectedVehicle.owner} (${selectedVehicle.plate}) dan diselaraskan ke semua peranti aktif.`,
+                "success"
+            );
+        };
+
+        window.registerVehicle = async function(e) {
+            e.preventDefault();
+
+            const role = document.getElementById('reg-role').value;
+            const id = document.getElementById('reg-id').value.trim().toUpperCase();
+            const name = document.getElementById('reg-name').value.trim();
+            const phone = document.getElementById('reg-phone').value.trim().replace(/[^0-9]/g, '');
+            const plate = document.getElementById('reg-plate').value.trim().toUpperCase();
+            const model = document.getElementById('reg-model').value.trim();
+            const dept = document.getElementById('reg-dept').value.trim() || "Warga KPTM Alor Setar";
+
+            const newVehicle = {
+                id,
+                plate,
+                model,
+                owner: name,
+                role,
+                dept,
+                zone: "Zon Parkir Kampus KPTM-AS",
+                phone: phone.startsWith('6') ? phone : '6' + phone,
+                updatedAt: Date.now()
+            };
+
+            if (isCloudReady && currentUser && db) {
+                try {
+                    const docId = plate.replace(/\s+/g, '_');
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'vehicles', docId), newVehicle);
+                } catch (err) {
+                    console.error("Gagal mendaftar kenderaan ke awan:", err);
+                }
+            } else {
+                const existingIndex = vehicles.findIndex(v => v.plate.replace(/\s+/g, '') === plate.replace(/\s+/g, ''));
+                if (existingIndex > -1) {
+                    vehicles[existingIndex] = newVehicle;
+                } else {
+                    vehicles.unshift(newVehicle);
+                }
+                renderQuickScanButtons();
+                renderDirectory(currentFilterRole);
+            }
+
+            currentStickerPlate = plate;
+            document.getElementById('sticker-plate').textContent = plate;
+            document.getElementById('sticker-model').textContent = model;
+            document.getElementById('sticker-role').textContent = role;
+            generateQRCode(plate);
+
+            showModal(
+                "Pelekat QR Berjaya Dijana!",
+                `Kenderaan ${plate} telah didaftarkan secara kekal dalam sistem KPTM Alor Setar. Anda boleh mencetak pelekat QR ini sekarang.`,
+                "success"
+            );
+        };
+
+        function generateQRCode(plateText) {
+            const container = document.getElementById('qrcode-container');
+            container.innerHTML = "";
+            const qrPayload = `KPTMAS-PARK:${plateText}`;
+
+            try {
+                if (typeof QRCode !== 'undefined') {
+                    new QRCode(container, {
+                        text: qrPayload,
+                        width: 140,
+                        height: 140,
+                        colorDark: "#1e3a8a",
+                        colorLight: "#ffffff",
+                        correctLevel: QRCode.CorrectLevel.H
+                    });
+                } else {
+                    throw new Error("Pustaka QRCode.js tidak dimuatkan");
+                }
+            } catch (err) {
+                // Sandaran API Imej QR jika skrip disekat oleh sandbox Google Sites
+                const fallbackImg = document.createElement('img');
+                fallbackImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&color=1e3a8a&data=${encodeURIComponent(qrPayload)}`;
+                fallbackImg.alt = `QR ${plateText}`;
+                fallbackImg.className = "w-[140px] h-[140px] mx-auto";
+                container.appendChild(fallbackImg);
+            }
+        }
+
+        window.simulateScanCurrentSticker = function() {
+            selectVehicleByPlate(currentStickerPlate);
+        };
+
+        function renderDirectory(filterRole) {
+            currentFilterRole = filterRole;
+            const grid = document.getElementById('vehicle-list-grid');
+            const filtered = filterRole === 'ALL' ? vehicles : vehicles.filter(v => v.role === filterRole);
+
+            grid.innerHTML = filtered.map(v => `
+                <div class="border border-slate-200 rounded-xl p-4 hover:border-blue-500 transition bg-slate-50/50 flex items-center justify-between">
+                    <div>
+                        <div class="flex items-center space-x-2 mb-1">
+                            <span class="font-extrabold text-base text-slate-900">${v.plate}</span>
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${v.role === 'PENSYARAH' ? 'bg-purple-100 text-purple-800' : v.role === 'STAF' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}">${v.role}</span>
+                        </div>
+                        <p class="text-xs font-medium text-slate-700">${v.model} • ${v.owner}</p>
+                        <p class="text-[11px] text-slate-500 mt-0.5"><i class="fa-solid fa-location-dot text-blue-700 mr-1"></i>${v.zone}</p>
+                    </div>
+                    <button onclick="selectVehicleByPlate('${v.plate}')" class="bg-blue-800 hover:bg-blue-900 text-white text-xs font-semibold px-3.5 py-2 rounded-lg shadow-xs transition">
+                        Minta Alih
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        window.filterDirectory = function(role) {
+            document.querySelectorAll('.filter-pill').forEach(btn => {
+                btn.classList.remove('bg-blue-900', 'text-white');
+                btn.classList.add('bg-slate-100', 'text-slate-700');
+            });
+            event.target.classList.remove('bg-slate-100', 'text-slate-700');
+            event.target.classList.add('bg-blue-900', 'text-white');
+            renderDirectory(role);
+        };
+
+        window.toggleNotificationDrawer = function() {
+            const drawer = document.getElementById('notification-drawer');
+            drawer.classList.toggle('hidden');
+        };
+
+        function renderNotifications() {
+            const list = document.getElementById('notification-list');
+            const badge = document.getElementById('notif-badge');
+            const unreadCount = notifications.filter(n => !n.acknowledged).length;
+
+            badge.textContent = unreadCount;
+            badge.style.display = unreadCount > 0 ? 'flex' : 'none';
+
+            if (notifications.length === 0) {
+                list.innerHTML = `<div class="text-center py-12 text-slate-400 text-sm">Tiada notifikasi parkir buat masa ini.</div>`;
+                return;
+            }
+
+            list.innerHTML = notifications.map(n => `
+                <div class="bg-white p-4 rounded-xl border ${n.acknowledged ? 'border-slate-200 opacity-75' : 'border-red-300 shadow-sm'}">
+                    <div class="flex justify-between items-start mb-1.5">
+                        <span class="bg-red-100 text-red-800 text-[11px] font-extrabold px-2 py-0.5 rounded-md">UNTUK: ${n.targetPlate}</span>
+                        <span class="text-[11px] text-slate-400">${n.time}</span>
+                    </div>
+                    <p class="text-sm font-semibold text-slate-800 mb-2">"${n.message}"</p>
+                    <div class="flex items-center justify-between pt-2 border-t border-slate-100">
+                        <span class="text-xs text-slate-500">Daripada: <strong>${n.senderPlate}</strong></span>
+                        ${n.acknowledged 
+                            ? `<span class="text-xs font-bold text-emerald-600"><i class="fa-solid fa-check-double mr-1"></i>Sedang Turun</span>`
+                            : `<button onclick="acknowledgeAlert('${n.docId}')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition">Sahkan & Alih Sekarang</button>`
+                        }
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        window.acknowledgeAlert = async function(docId) {
+            if (isCloudReady && currentUser && db) {
+                try {
+                    const alertRef = doc(db, 'artifacts', appId, 'public', 'data', 'park_alerts', docId);
+                    await updateDoc(alertRef, { acknowledged: true });
+                } catch (err) {
+                    console.error("Gagal mengesahkan notifikasi:", err);
+                }
+            } else {
+                const item = notifications.find(n => n.docId === docId);
+                if (item) {
+                    item.acknowledged = true;
+                    renderNotifications();
+                }
+            }
+        };
+
+        window.clearNotifications = async function() {
+            if (isCloudReady && currentUser && db) {
+                try {
+                    for (const n of notifications) {
+                        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'park_alerts', n.docId));
+                    }
+                } catch (err) {
+                    console.error("Gagal memadam notifikasi:", err);
+                }
+            } else {
+                notifications = [];
+                renderNotifications();
+            }
+        };
+
+        function showModal(title, desc, type = "success") {
+            const modal = document.getElementById('custom-modal');
+            const iconBox = document.getElementById('modal-icon');
+            document.getElementById('modal-title').textContent = title;
+            document.getElementById('modal-desc').textContent = desc;
+
+            if (type === "warning") {
+                iconBox.className = "w-16 h-16 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-3xl mx-auto mb-4";
+                iconBox.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i>`;
+            } else {
+                iconBox.className = "w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-3xl mx-auto mb-4";
+                iconBox.innerHTML = `<i class="fa-solid fa-paper-plane"></i>`;
+            }
+
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        window.closeModal = function() {
+            const modal = document.getElementById('custom-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        };
+
+        // ==========================================
+        // LOGIK PANEL KAWALAN ADMIN
+        // ==========================================
+        window.handleAdminLogin = function(e) {
+            e.preventDefault();
+            const inputPass = document.getElementById('admin-password-input').value;
+            if (inputPass === systemSettings.adminPassword) {
+                isAdminLoggedIn = true;
+                document.getElementById('admin-password-input').value = '';
+                document.getElementById('admin-login-box').classList.add('hidden');
+                document.getElementById('admin-dashboard').classList.remove('hidden');
+                applySystemSettings();
+                renderAdminVehicles();
+            } else {
+                showModal("Akses Ditolak", "Kata laluan Admin tidak tepat. Sila cuba lagi.", "warning");
+            }
+        };
+
+        window.logoutAdmin = function() {
+            isAdminLoggedIn = false;
+            document.getElementById('admin-dashboard').classList.add('hidden');
+            document.getElementById('admin-login-box').classList.remove('hidden');
+            document.getElementById('tab-admin').classList.add('hidden');
+            switchTab('scan');
+        };
+
+        window.saveSystemSettings = async function(e) {
+            e.preventDefault();
+            const updatedSettings = {
+                bannerTitle: document.getElementById('setting-banner-title').value.trim(),
+                bannerDesc: document.getElementById('setting-banner-desc').value.trim(),
+                adminPassword: document.getElementById('setting-admin-pass').value.trim() || "admin123"
+            };
+
+            systemSettings = updatedSettings;
+            applySystemSettings();
+
+            if (isCloudReady && currentUser && db) {
+                try {
+                    const settingsDoc = doc(db, 'artifacts', appId, 'public', 'data', 'system_config', 'general');
+                    await setDoc(settingsDoc, updatedSettings);
+                } catch (err) {
+                    console.error("Gagal menyimpan tetapan:", err);
+                }
+            }
+
+            showModal("Tetapan Disimpan!", "Maklumat hebahan kampus dan tetapan keselamatan telah berjaya dikemaskini.", "success");
+        };
+
+        function renderAdminVehicles() {
+            const container = document.getElementById('admin-vehicle-list');
+            const countBadge = document.getElementById('admin-total-count');
+            if (!container || !countBadge) return;
+
+            countBadge.textContent = `${vehicles.length} Kenderaan`;
+
+            if (vehicles.length === 0) {
+                container.innerHTML = `<p class="text-sm text-slate-400 text-center py-6">Tiada rekod kenderaan berdaftar.</p>`;
+                return;
+            }
+
+            container.innerHTML = vehicles.map(v => `
+                <div class="border border-slate-200 rounded-xl p-3.5 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <span class="font-extrabold text-sm text-slate-900">${v.plate}</span>
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">${v.role}</span>
+                            <span class="text-xs text-slate-500">(${v.id || '-'})</span>
+                        </div>
+                        <p class="text-xs font-semibold text-slate-700 mt-0.5">${v.owner} • ${v.model}</p>
+                        <p class="text-[11px] text-slate-500">Tel: ${v.phone} | Zon: ${v.zone}</p>
+                    </div>
+                    <div class="flex items-center space-x-2 self-end sm:self-center">
+                        <button onclick="openEditVehicleModal('${v.plate}')" class="bg-amber-100 hover:bg-amber-200 text-amber-900 text-xs font-bold px-3 py-1.5 rounded-lg transition">
+                            <i class="fa-solid fa-pen-to-square mr-1"></i> Sunting
+                        </button>
+                        <button onclick="deleteVehicleRecord('${v.plate}')" class="bg-red-100 hover:bg-red-200 text-red-800 text-xs font-bold px-3 py-1.5 rounded-lg transition">
+                            <i class="fa-solid fa-trash mr-1"></i> Padam
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        window.openEditVehicleModal = function(plate) {
+            const v = vehicles.find(item => item.plate === plate);
+            if (!v) return;
+
+            document.getElementById('edit-orig-plate').value = v.plate;
+            document.getElementById('edit-plate').value = v.plate;
+            document.getElementById('edit-role').value = v.role;
+            document.getElementById('edit-owner').value = v.owner;
+            document.getElementById('edit-model').value = v.model;
+            document.getElementById('edit-phone').value = v.phone;
+            document.getElementById('edit-zone').value = v.zone;
+
+            const modal = document.getElementById('edit-vehicle-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        };
+
+        window.closeEditModal = function() {
+            const modal = document.getElementById('edit-vehicle-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        };
+
+        window.saveEditedVehicle = async function(e) {
+            e.preventDefault();
+            const plate = document.getElementById('edit-orig-plate').value;
+            const existing = vehicles.find(item => item.plate === plate);
+            if (!existing) return;
+
+            const updatedData = {
+                ...existing,
+                role: document.getElementById('edit-role').value,
+                owner: document.getElementById('edit-owner').value.trim(),
+                model: document.getElementById('edit-model').value.trim(),
+                phone: document.getElementById('edit-phone').value.trim().replace(/[^0-9]/g, ''),
+                zone: document.getElementById('edit-zone').value.trim(),
+                updatedAt: Date.now()
+            };
+
+            if (isCloudReady && currentUser && db) {
+                try {
+                    const docId = plate.replace(/\s+/g, '_');
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'vehicles', docId), updatedData);
+                } catch (err) {
+                    console.error("Gagal mengemaskini rekod:", err);
+                }
+            } else {
+                const idx = vehicles.findIndex(item => item.plate === plate);
+                if (idx > -1) vehicles[idx] = updatedData;
+                renderQuickScanButtons();
+                renderDirectory(currentFilterRole);
+                renderAdminVehicles();
+            }
+
+            closeEditModal();
+            showModal("Rekod Dikemaskini", `Maklumat kenderaan ${plate} telah berjaya disunting.`, "success");
+        };
+
+        window.deleteVehicleRecord = async function(plate) {
+            if (isCloudReady && currentUser && db) {
+                try {
+                    const docId = plate.replace(/\s+/g, '_');
+                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'vehicles', docId));
+                } catch (err) {
+                    console.error("Gagal memadam rekod kenderaan:", err);
+                }
+            } else {
+                vehicles = vehicles.filter(v => v.plate !== plate);
+                renderQuickScanButtons();
+                renderDirectory(currentFilterRole);
+                renderAdminVehicles();
+            }
+
+            showModal("Rekod Dipadam", `Kenderaan ${plate} telah dikeluarkan daripada senarai aktif.`, "success");
+        };
+
+        // ==========================================
+        // NAVIGASI TAB, KAMERA & PEMULAAN SISTEM
+        // ==========================================
+        window.switchTab = function(tabName) {
+            // Hentikan kamera jika pengguna bertukar ke tab lain
+            if (tabName !== 'scan' && isCameraScanning) {
+                stopCameraScanner();
+            }
+
+            ['scan', 'register', 'directory', 'admin'].forEach(t => {
+                const viewEl = document.getElementById(`view-${t}`);
+                const tabEl = document.getElementById(`tab-${t}`);
+                if (viewEl) viewEl.classList.add('hidden');
+                if (tabEl) {
+                    tabEl.classList.remove('border-blue-800', 'text-blue-900', 'font-semibold');
+                    tabEl.classList.add('border-transparent', 'text-slate-500', 'font-medium');
+                }
+            });
+
+            const activeView = document.getElementById(`view-${tabName}`);
+            const activeTab = document.getElementById(`tab-${tabName}`);
+            if (activeView) activeView.classList.remove('hidden');
+            if (activeTab) {
+                activeTab.classList.remove('border-transparent', 'text-slate-500', 'font-medium');
+                activeTab.classList.add('border-blue-800', 'text-blue-900', 'font-semibold');
+            }
+
+            if (tabName === 'register') {
+                generateQRCode(currentStickerPlate);
+            } else if (tabName === 'directory') {
+                renderDirectory(currentFilterRole);
+            }
+        };
+
+        window.handleSecretAdminTap = function() {
+            secretTapCount++;
+            clearTimeout(secretTapTimer);
+            if (secretTapCount >= 5) {
+                secretTapCount = 0;
+                const adminTab = document.getElementById('tab-admin');
+                if (adminTab) adminTab.classList.remove('hidden');
+                switchTab('admin');
+            } else {
+                secretTapTimer = setTimeout(() => {
+                    secretTapCount = 0;
+                }, 2000);
+            }
+        };
+
+        window.exitAdminAccess = function() {
+            const adminTab = document.getElementById('tab-admin');
+            if (adminTab) adminTab.classList.add('hidden');
+            switchTab('scan');
+        };
+
+        function applySystemSettings() {
+            const titleEl = document.getElementById('campus-banner-title');
+            const descEl = document.getElementById('campus-banner-desc');
+            if (titleEl) titleEl.textContent = systemSettings.bannerTitle;
+            if (descEl) descEl.textContent = systemSettings.bannerDesc;
+
+            const setTitle = document.getElementById('setting-banner-title');
+            const setDesc = document.getElementById('setting-banner-desc');
+            const setPass = document.getElementById('setting-admin-pass');
+            if (setTitle) setTitle.value = systemSettings.bannerTitle;
+            if (setDesc) setDesc.value = systemSettings.bannerDesc;
+            if (setPass) setPass.value = systemSettings.adminPassword;
+        }
+
+        window.toggleCameraScanner = async function() {
+            if (isCameraScanning) {
+                await stopCameraScanner();
+            } else {
+                await startCameraScanner();
+            }
+        };
+
+        async function startCameraScanner() {
+            const readerEl = document.getElementById('qr-reader');
+            const placeholderEl = document.getElementById('scanner-placeholder');
+            const btnEl = document.getElementById('toggle-camera-btn');
+
+            if (typeof Html5Qrcode === 'undefined') {
+                showModal("Pengimbas Tidak Disokong", "Pelayar anda menyekat akses kamera atau pustaka imbasan gagal dimuatkan.", "warning");
+                return;
+            }
+
+            try {
+                placeholderEl.classList.add('hidden');
+                readerEl.classList.remove('hidden');
+
+                html5QrCode = new Html5Qrcode("qr-reader");
+                await html5QrCode.start(
+                    { facingMode: "environment" },
+                    { fps: 10, qrbox: { width: 180, height: 180 } },
+                    (decodedText) => {
+                        let plate = decodedText.trim().toUpperCase();
+                        if (plate.startsWith("KPTMAS-PARK:")) {
+                            plate = plate.replace("KPTMAS-PARK:", "").trim();
+                        }
+                        stopCameraScanner();
+                        playAlertSound();
+
+                        const found = vehicles.find(v => v.plate.replace(/\s+/g, '') === plate.replace(/\s+/g, ''));
+                        if (found) {
+                            selectVehicleByPlate(found.plate);
+                        } else {
+                            document.getElementById('search-plate-input').value = plate;
+                            showModal("QR Diimbas", `Kod QR dikesan untuk plat ${plate}, tetapi kenderaan belum berdaftar.`, "warning");
+                        }
+                    },
+                    () => {}
+                );
+
+                isCameraScanning = true;
+                btnEl.innerHTML = `<i class="fa-solid fa-stop"></i><span>Hentikan Kamera</span>`;
+                btnEl.classList.remove('bg-amber-400', 'hover:bg-amber-500', 'text-slate-950');
+                btnEl.classList.add('bg-red-600', 'hover:bg-red-700', 'text-white');
+            } catch (err) {
+                console.error("Ralat kamera:", err);
+                readerEl.classList.add('hidden');
+                placeholderEl.classList.remove('hidden');
+                showModal("Akses Kamera Ditolak", "Sila benarkan kebenaran kamera pada pelayar atau gunakan carian nombor plat di bawah.", "warning");
+            }
+        }
+
+        async function stopCameraScanner() {
+            const readerEl = document.getElementById('qr-reader');
+            const placeholderEl = document.getElementById('scanner-placeholder');
+            const btnEl = document.getElementById('toggle-camera-btn');
+
+            if (html5QrCode && isCameraScanning) {
+                try {
+                    await html5QrCode.stop();
+                    html5QrCode.clear();
+                } catch (e) {
+                    console.log("Henti kamera:", e);
+                }
+            }
+            isCameraScanning = false;
+            if (readerEl) readerEl.classList.add('hidden');
+            if (placeholderEl) placeholderEl.classList.remove('hidden');
+            if (btnEl) {
+                btnEl.innerHTML = `<i class="fa-solid fa-video"></i><span>Aktifkan Kamera Imbasan</span>`;
+                btnEl.classList.remove('bg-red-600', 'hover:bg-red-700', 'text-white');
+                btnEl.classList.add('bg-amber-400', 'hover:bg-amber-500', 'text-slate-950');
+            }
+        }
+
+        function setupRealtimeListeners() {
+            if (!db || !currentUser) return;
+
+            // 1. Pendengar Kenderaan
+            const vehiclesCol = collection(db, 'artifacts', appId, 'public', 'data', 'vehicles');
+            onSnapshot(vehiclesCol, (snapshot) => {
+                if (!snapshot.empty) {
+                    const cloudVehicles = [];
+                    snapshot.forEach(docSnap => cloudVehicles.push(docSnap.data()));
+                    cloudVehicles.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+                    vehicles = cloudVehicles;
+                }
+                renderQuickScanButtons();
+                renderDirectory(currentFilterRole);
+                if (isAdminLoggedIn) renderAdminVehicles();
+            }, (err) => console.error("Ralat snapshot kenderaan:", err));
+
+            // 2. Pendengar Notifikasi Parkir
+            const alertsCol = collection(db, 'artifacts', appId, 'public', 'data', 'park_alerts');
+            onSnapshot(alertsCol, (snapshot) => {
+                const cloudAlerts = [];
+                snapshot.forEach(docSnap => {
+                    cloudAlerts.push({ docId: docSnap.id, ...docSnap.data() });
+                });
+                cloudAlerts.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                if (initialNotifLoaded && cloudAlerts.length > notifications.length) {
+                    playAlertSound();
+                }
+                notifications = cloudAlerts;
+                initialNotifLoaded = true;
+                renderNotifications();
+            }, (err) => console.error("Ralat snapshot notifikasi:", err));
+
+            // 3. Pendengar Tetapan Sistem
+            const settingsDoc = doc(db, 'artifacts', appId, 'public', 'data', 'system_config', 'general');
+            onSnapshot(settingsDoc, (docSnap) => {
+                if (docSnap.exists()) {
+                    systemSettings = { ...systemSettings, ...docSnap.data() };
+                    applySystemSettings();
+                }
+            }, (err) => console.error("Ralat snapshot tetapan:", err));
+        }
+
+        // Mulakan Aplikasi Apabila Halaman Siap Dimuatkan
+        function bootstrapApp() {
+            applySystemSettings();
+            renderQuickScanButtons();
+            renderDirectory('ALL');
+            renderNotifications();
+            generateQRCode(currentStickerPlate);
+
+            // Semak parameter URL ?admin=1
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('admin') === '1') {
+                const adminTab = document.getElementById('tab-admin');
+                if (adminTab) adminTab.classList.remove('hidden');
+                switchTab('admin');
+            }
+
+            initCloudSync();
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', bootstrapApp);
+        } else {
+            bootstrapApp();
+        }
+    </script>
+</body>
+</html>
