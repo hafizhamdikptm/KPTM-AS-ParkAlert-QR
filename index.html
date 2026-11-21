@@ -1004,28 +1004,71 @@
             switchTab('scan');
         };
 
-        window.saveSystemSettings = async function(e) {
-            e.preventDefault();
-            const updatedSettings = {
-                bannerTitle: document.getElementById('setting-banner-title').value.trim(),
-                bannerDesc: document.getElementById('setting-banner-desc').value.trim(),
-                adminPassword: document.getElementById('setting-admin-pass').value.trim() || "admin123"
-            };
 
-            systemSettings = updatedSettings;
-            applySystemSettings();
+window.saveSystemSettings = async function(e) {
+    e.preventDefault();
 
-            if (isCloudReady && currentUser && db) {
-                try {
-                    const settingsDoc = doc(db, 'artifacts', appId, 'public', 'data', 'system_config', 'general');
-                    await setDoc(settingsDoc, updatedSettings);
-                } catch (err) {
-                    console.error("Gagal menyimpan tetapan:", err);
-                }
-            }
+    const updatedSettings = {
+        ...systemSettings,
+        bannerTitle: document.getElementById('setting-banner-title').value.trim(),
+        bannerDesc: document.getElementById('setting-banner-desc').value.trim()
+    };
 
-            showModal("Tetapan Disimpan!", "Maklumat hebahan kampus dan tetapan keselamatan telah berjaya dikemaskini.", "success");
-        };
+    if (!updatedSettings.bannerTitle || !updatedSettings.bannerDesc) {
+        showModal("Maklumat Tidak Lengkap",
+            "Sila isi tajuk dan penerangan zon parkir.",
+            "warning");
+        return;
+    }
+
+    try {
+        // Simpan tetapan pada browser admin
+        localStorage.setItem(
+            'parkAlertSystemSettings',
+            JSON.stringify({
+                bannerTitle: updatedSettings.bannerTitle,
+                bannerDesc: updatedSettings.bannerDesc
+            })
+        );
+
+        // Kemas kini tetapan semasa
+        systemSettings = updatedSettings;
+
+        // Paparkan perubahan pada halaman utama
+        applySystemSettings();
+
+        // Jika Firebase aktif, simpan juga ke database awan
+        if (isCloudReady && currentUser && db) {
+            const settingsDoc = doc(
+                db,
+                'artifacts',
+                appId,
+                'public',
+                'data',
+                'system_config',
+                'general'
+            );
+
+            await setDoc(settingsDoc, updatedSettings);
+        }
+
+        showModal(
+            "Tetapan Berjaya Disimpan!",
+            "Tajuk dan penerangan zon parkir telah dikemaskini.",
+            "success"
+        );
+
+    } catch (err) {
+        console.error("Ralat menyimpan tetapan:", err);
+
+        showModal(
+            "Ralat Penyimpanan",
+            "Tetapan tidak berjaya disimpan. Sila cuba semula.",
+            "warning"
+        );
+    }
+};
+
 
         function renderAdminVehicles() {
             const container = document.getElementById('admin-vehicle-list');
@@ -1332,7 +1375,27 @@
 
         // Mulakan Aplikasi Apabila Halaman Siap Dimuatkan
         function bootstrapApp() {
-            applySystemSettings();
+
+    // Muatkan tetapan yang pernah disimpan
+    try {
+        const savedSettings = localStorage.getItem(
+            'parkAlertSystemSettings'
+        );
+
+        if (savedSettings) {
+            const parsedSettings = JSON.parse(savedSettings);
+
+            systemSettings = {
+                ...systemSettings,
+                ...parsedSettings
+            };
+        }
+    } catch (err) {
+        console.error("Gagal memuatkan tetapan:", err);
+    }
+
+    // Paparkan tetapan terkini
+    applySystemSettings();
             renderQuickScanButtons();
             renderDirectory('ALL');
             renderNotifications();
